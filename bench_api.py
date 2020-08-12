@@ -56,6 +56,7 @@ def get_pod_list(pods_name):
     """Returns a dictionary with keys= Pod names and value= whether logs of pods are available"""
     ret = client.CoreV1Api().list_pod_for_all_namespaces(watch=False)
     pod_log_status = {}
+    print(len(ret.items))
     for i in ret.items:
         if pods_name in i.metadata.name:
             pod_log_status[i.metadata.name] = "LogsNotChecked"
@@ -75,6 +76,7 @@ def check_logs_ready(pod_log_status, pods_name):
         sleep(time)
         ret = client.CoreV1Api().list_pod_for_all_namespaces(watch=False)
         for i in ret.items:
+            #print(i.metadata.name)
             if pods_name in i.metadata.name and pod_log_status[i.metadata.name] != "LogsReady":
                 try:
                     if i.status.container_statuses[0].state.waiting.reason == 'CrashLoopBackOff'\
@@ -84,7 +86,7 @@ def check_logs_ready(pod_log_status, pods_name):
                         #print(i.metadata.name, i.status, i.status.container_statuses[0].\
                         # state.waiting.reason)
                         update = True
-                except ContainerError:
+                except:
                     pod_log_status[i.metadata.name] = "LogsNotReady"
                     print(i.metadata.name + " Kube-bench container in unusable state")
                     update = True
@@ -100,8 +102,17 @@ def check_logs_ready(pod_log_status, pods_name):
 
 def get_logs(pods_name):
     """Fetch logs for the kub-bench pods"""
-    pod_log_status = get_pod_list(pods_name)
+    node_object = client.CoreV1Api().list_node() #Fetch number of nodes
+    node_n = len(node_object.items)
+    pod_n = 0
+    while pod_n < node_n:
+        #Making sure we have all the pod_names for each of the nodes
+        pod_log_status = get_pod_list(pods_name)
+        pod_n = len(pod_log_status)
+
+    #Get list of the pods for which logs are ready
     pod_log_status = check_logs_ready(pod_log_status, pods_name)
+
     for pod in pod_log_status:
         #print(pod + " " + pod_log_status[pod])
         if pod_log_status[pod] == "LogsReady":
@@ -109,12 +120,12 @@ def get_logs(pods_name):
             name=pod, namespace="default")
             #Write logs to the files
             node_name = node_pod(pod)
+            #[**list_node**](CoreV1Api.md#list_node) | **GET** /api/v1/nodes |
             write_logs(node_name, logs_response)
 
 def main():
     """Main Function"""
     pods_name = apply_yaml()
-    sleep(5)
     delete_old()
     get_logs(pods_name)
     sleep(30)
